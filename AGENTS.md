@@ -4,6 +4,7 @@
 
 - 제품 요구사항과 미정 선택은 [docs/requirements.md](docs/requirements.md)를 기준으로 구분한다.
 - 제품 결정이 바뀌면 해당 요구사항 문서를 갱신한다.
+- 구현 구조와 데이터 계약은 [docs/lld.md](docs/lld.md)를 참조하고, 설계가 바뀌면 함께 갱신한다.
 
 ## 작업 방식
 
