@@ -383,3 +383,35 @@ async def test_completed_course_reviews_earlier_part_and_remembers_it_without_ai
             assert repo.get_progress(first_id)["status"] == "completed"
     finally:
         repo.close()
+
+
+@pytest.mark.asyncio
+async def test_skipping_to_last_part_does_not_complete_unfinished_course(tmp_path):
+    repo = Repository(tmp_path)
+    generator = CountingDemo()
+    app = StudyApp(repo, generator, StoredASCIIRenderer(), UnusedPDFExporter(), demo=True)
+    try:
+        async with app.run_test(size=(110, 38)) as pilot:
+            await start_demo(app, pilot)
+            course_id, first_id = app.course_id, app.part_id
+            second_id = repo.list_parts(course_id)[1]["id"]
+            app.query_one("#part-picker", Select).value = second_id
+            await settle(app, pilot)
+            assert app.part_id == second_id
+            assert repo.get_progress(first_id)["status"] != "completed"
+            await click(app, pilot, "#next-part")
+            assert app.view == "study"
+            assert app.part_id == first_id
+            assert repo.get_course(course_id)["status"] == "active"
+            assert repo.get_progress(second_id)["status"] == "completed"
+            assert repo.get_progress(first_id)["status"] != "completed"
+            await click(app, pilot, "#next-part")
+            assert app.view == "completed"
+            assert repo.get_course(course_id)["status"] == "completed"
+            assert all(repo.get_progress(part["id"])["status"] == "completed"
+                       for part in repo.list_parts(course_id))
+            assert generator.lesson_calls == 2
+            assert not repo.get_progress(first_id)["answers_revealed"]
+            assert not repo.get_progress(second_id)["answers_revealed"]
+    finally:
+        repo.close()

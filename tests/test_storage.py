@@ -159,3 +159,29 @@ def test_reopen_marks_abandoned_job_interrupted_and_keeps_ready_material(repo):
         assert reopened.get_active_material(part)["id"] == material["id"]
     finally:
         reopened.close()
+
+
+def test_part_picker_jump_does_not_complete_unvisited_parts_and_next_uses_remaining_order(repo):
+    plan = copy.deepcopy(DEMO_PLAN)
+    plan["parts"] = [dict(copy.deepcopy(plan["parts"][0]), ordinal=i) for i in range(1, 5)]
+    course = repo.save_draft(plan)
+    repo.start_course(course)
+    first, second, third, fourth = [part["id"] for part in repo.list_parts(course)]
+
+    repo.select_part(fourth)
+    assert repo.choose_next(fourth) == first
+    assert repo.get_course(course)["status"] == "active"
+    assert repo.get_progress(first)["status"] == "not_started"
+    assert repo.get_progress(fourth)["status"] == "completed"
+
+    repo.select_part(second)
+    assert repo.choose_next(second) == third  # Later incomplete parts come first.
+    assert repo.choose_next(third) == first  # Completed fourth is skipped; wrap.
+    assert repo.choose_next(first) is None
+    assert repo.get_course(course)["status"] == "completed"
+    assert all(repo.get_progress(part)["status"] == "completed" for part in (first, second, third, fourth))
+    assert all(not repo.get_progress(part)["answers_revealed"] for part in (first, second, third, fourth))
+
+    repo.select_part(first)
+    assert repo.choose_next(first) == second  # Finished-course review keeps ordinal navigation.
+    assert repo.get_course(course)["status"] == "completed"

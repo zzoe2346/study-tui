@@ -142,3 +142,21 @@ async def test_concurrent_same_part_requests_share_saved_material_after_first_fi
     first, second = await asyncio.gather(service.ensure_material(part), service.ensure_material(part))
     assert first["id"] == second["id"]
     assert generator.lesson_calls == renderer.calls == 1
+
+
+async def test_jump_to_last_part_then_next_loads_unfinished_first_without_quiz_gate(setup):
+    repo, generator, _, service, course, first = setup
+    last = repo.list_parts(course)[-1]["id"]
+    repo.select_part(last)
+    await service.ensure_material(last)
+    next_part = service.choose_next(last)
+    assert next_part == first
+    assert repo.get_course(course)["status"] == "active"
+    assert service.resume_course(course) == first
+    await service.ensure_material(next_part)
+    assert service.choose_next(first) is None
+    assert repo.get_course(course)["status"] == "completed"
+    assert generator.lesson_calls == 2
+    for part in (first, last):
+        assert repo.get_progress(part)["answers"] == {}
+        assert not repo.get_progress(part)["answers_revealed"]

@@ -417,13 +417,27 @@ class Repository:
     def choose_next(self, part_id: str) -> str | None:
         part = self.get_part(part_id)
         course = self.get_course(part["course_id"])
-        next_row = self.db.execute("SELECT id FROM parts WHERE course_id=? AND ordinal=?", (part["course_id"], part["ordinal"] + 1)).fetchone()
-        next_id = next_row["id"] if next_row else None
         with self.db:
             self.db.execute("UPDATE progress SET status='completed',updated_at=? WHERE part_id=?", (now(), part_id))
             if course["status"] == "completed":
+                next_row = self.db.execute("SELECT id FROM parts WHERE course_id=? AND ordinal=?",
+                                           (part["course_id"], part["ordinal"] + 1)).fetchone()
+                next_id = next_row["id"] if next_row else None
                 self.db.execute("UPDATE courses SET updated_at=? WHERE id=?", (now(), part["course_id"]))
             else:
+                # Explicit Next completes this part, including when reached via the
+                # picker. Finish the finite course only after every part was chosen
+                # complete; quiz notes/reveal never participate in this decision.
+                next_row = self.db.execute(
+                    "SELECT p.id FROM parts p JOIN progress r ON r.part_id=p.id "
+                    "WHERE p.course_id=? AND p.ordinal>? AND r.status!='completed' "
+                    "ORDER BY p.ordinal LIMIT 1", (part["course_id"], part["ordinal"])).fetchone()
+                if next_row is None:
+                    next_row = self.db.execute(
+                        "SELECT p.id FROM parts p JOIN progress r ON r.part_id=p.id "
+                        "WHERE p.course_id=? AND r.status!='completed' ORDER BY p.ordinal LIMIT 1",
+                        (part["course_id"],)).fetchone()
+                next_id = next_row["id"] if next_row else None
                 self.db.execute("UPDATE courses SET current_part_id=?,status=?,updated_at=? WHERE id=?",
                                 (next_id, "active" if next_id else "completed", now(), part["course_id"]))
         return next_id
