@@ -17,3 +17,12 @@
 
 # 운영체제 메타데이터
 .DS_Store
+
+# Python / package build
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+/build/
+/dist/

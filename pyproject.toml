@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "study-tui"
+version = "0.1.0"
+description = "Local backend learning courses in your terminal"
+requires-python = ">=3.12"
+dependencies = [
+  "textual==8.2.8", "jsonschema==4.26.0", "playwright==1.63.0",
+  "markdown-it-py==4.2.0", "defusedxml==0.7.1", "pillow==12.3.0",
+  "platformdirs==4.12.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "pypdf==6.19.0"]
+
+[project.scripts]
+study-tui = "study_tui.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/study_tui"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
