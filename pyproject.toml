@@ -7,6 +7,12 @@ name = "study-tui"
 version = "0.1.0"
 description = "Local backend learning courses in your terminal"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = [
+  "LICENSE", "src/study_tui/assets/NOTICE.md",
+  "src/study_tui/assets/vendor/MERMAID-LICENSE",
+  "src/study_tui/assets/fonts/*-OFL.txt",
+]
 dependencies = [
   "textual==8.2.8", "jsonschema==4.26.0", "playwright==1.63.0",
   "markdown-it-py==4.2.0", "defusedxml==0.7.1", "pillow==12.3.0",

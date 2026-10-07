@@ -4,7 +4,7 @@
 
 Python·Textual로 실행하며 별도 HTTP 서버가 필요하지 않습니다. AI 생성은 기존 ChatGPT 로그인으로 Codex CLI를 호출합니다.
 
-> **공개 저장소입니다.** 2026-10-08에 소스코드를 공개했습니다. 프로젝트 전체의 라이선스는 아직 결정하지 않았습니다. `study-tui`는 임시 작업명입니다.
+> **공개 저장소입니다.** 2026-10-08에 소스코드를 공개했습니다. 프로젝트 코드는 [MIT 라이선스](LICENSE)를 적용합니다. `study-tui`는 임시 작업명입니다.
 
 ![실제 생성·저장한 PostgreSQL 교재를 실행 중인 TUI](docs/assets/lesson.png)
 
@@ -132,4 +132,4 @@ python -m pytest -q
 - [협업 지침](AGENTS.md)
 - [포함한 Mermaid·폰트의 출처와 라이선스](src/study_tui/assets/NOTICE.md)
 
-프로젝트 전체의 라이선스는 아직 미정입니다. 포함한 외부 자산의 MIT·SIL OFL 라이선스는 해당 자산에 적용됩니다.
+프로젝트 코드는 [MIT 라이선스](LICENSE)를 적용합니다. 포함한 외부 자산의 MIT·SIL OFL 라이선스는 해당 자산에 별도로 적용됩니다.
