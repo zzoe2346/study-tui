@@ -13,6 +13,7 @@
 | 사용자 확정 | 유한한 기본 과정, 선택 심화 과정 | 심화 후보와 공부할 이유를 제시하고, 선택한 주제로 새 과정을 만든다. |
 | 사용자 확정 | 단순 퀴즈와 사용자 판단 | 자동 채점·AI 답안 평가·통과 점수·강제 재시험·적응형 보충은 없다. |
 | 사용자 확정 | 시각자료 필수, 파트별 PDF | 첫 버전에 과정 합본은 없다. 본문·예시·그림·문제와 분리된 정답을 포함한다. |
+| 사용자 확정 | 그림 실패 시 의미를 보존하는 대체 | 이미지/렌더링 실패는 저장된 Mermaid/SVG·ASCII 후보로 대체한다. 대체 사실과 선택적 원본 재시도를 표시한다. |
 | 사용자 확정 | Python + Textual | Java/Spring 경험에 맞출 필요가 없다. Textual의 화면·입력·worker 기능을 활용한다. |
 | 사용자 확정 | Codex CLI 자식 프로세스 + 기존 ChatGPT 구독 인증 | Responses API 직접 연동, API key 인증과 별도 유료 API로의 자동 전환은 없다. 구독 한도는 적용된다. |
 | 사용자 확정 | 개인용 로컬 앱, 별도 HTTP 서버 없음 | AI 추론·검색은 원격 Codex 서비스에 의존한다. 오프라인 AI 앱으로 설명하지 않는다. |
@@ -47,6 +48,33 @@ flowchart LR
     T --> O[OS PDF·이미지 뷰어]
 ```
 
+### ASCII 아키텍처
+
+```text
+ User
+   |
+   v
++----------------- Local Python app -----------------+
+| Textual TUI --> Course / Learning Service          |
+|     |                   |                          |
+|     |                   +--> Codex Adapter --------+--> (A)
+|     |                   +--> Repository            |
+|     |                   |      +--> SQLite / Files |
+|     |                   +--> Visuals --> Files     |
+|     |                   +--> HTML / PDF -----------+--> (B)
++-----|----------------------------------------------+
+      +--> OS Viewer (PDF / Image)
+
+(A) --> Codex CLI (child) --> Remote Codex service
+        cwd: <data_root>/jobs/<job_id>
+        auth: existing ChatGPT subscription
+(B) --> Chromium (child) --> Part PDF --> Files
+```
+
+`Course / Learning Service`는 과정·학습 서비스, `Repository`는 저장소, `Visuals`는 시각자료 렌더러다. `(A)`와 `(B)`는 앱 경계 밖의 자식 프로세스 호출이다. Codex는 원격 서비스에서 생성하며, CLI의 작업 루트는 학습 데이터 디렉터리이고 앱 코드 저장소가 아니다. Textual은 글·퀴즈·그림 설명을 표시하고 OS 뷰어로 PDF·이미지를 연다.
+
+이 ASCII 아키텍처는 설계 검토용이다. 학습 자료의 런타임 fallback은 아래 7·8절의 원본/대체 후보 계약을 따른다.
+
 | 구성요소 | 책임 |
 | --- | --- |
 | `tui/` | 과정 목록·초안·본문·퀴즈·심화 화면, 키 바인딩, 작업 상태 표시. SQL·CLI 출력 파싱은 하지 않는다. |
@@ -54,7 +82,7 @@ flowchart LR
 | `services/learning.py` | 파트 자료 재사용·생성·재생성, 정답 공개, 복습·다음 선택, 중단 후 복구. |
 | `adapters/codex.py` | 인증 사전 확인, subprocess·JSONL 처리, 최종 JSON 검증, 취소·실패 정규화. |
 | `storage/` | SQLite 트랜잭션, 자료 파일 원자적 저장, 현재 자료 참조와 진행 저장. |
-| `rendering/visuals.py` | Mermaid → SVG, SVG 검사, 생성 이미지 산출물 수집·검증. |
+| `rendering/visuals.py` | Mermaid → SVG, SVG/이미지 검사, 저장된 대체 후보 선택과 ASCII 자산 저장. |
 | `rendering/lesson.py`, `pdf.py` | 공통 학습 모델에서 TUI 표시 데이터와 인쇄 HTML/PDF 생성. |
 | `models.py`, `schemas/`, `templates/` | 데이터 계약, 생성 JSON Schema, 앱이 관리하는 교재 템플릿·폰트·로컬 Mermaid 번들. |
 
@@ -69,14 +97,14 @@ flowchart LR
 | 과정 목록 | 주제·현재 파트·진행, 새 주제 입력 버튼 | 새 과정 또는 저장된 과정의 마지막 위치로 재개. |
 | 주제 입력 | 주제 한 줄 | `Enter`로 초안 요청. 빈 입력은 안내하며 설문·진단을 요구하지 않는다. |
 | 과정 초안 | 목표·범위·파트 제목·각 파트 목표/분량 | `e` 직접 수정, `a` 짧은 수정 요청으로 AI 재작성, `s` 확정·시작. AI 수정은 버튼을 누를 때만 실행한다. |
-| 파트 본문 | 개념·원리·예시·그림 설명·출처 | 스크롤, `v` 선택 그림을 OS 뷰어로 열기, `q` 퀴즈, `p` 파트 PDF, `n` 사용자 판단으로 다음. |
+| 파트 본문 | 개념·원리·예시·그림/ASCII·설명·출처 | 스크롤, `v` 선택 그림을 OS 뷰어로 열기, `q` 퀴즈, `p` 파트 PDF, `n` 사용자 판단으로 다음. |
 | 퀴즈 | 문제·선택 입력란, 종이 풀이 안내 | `Ctrl+Enter` 정답·해설 공개, `n` 사용자 판단으로 다음. 답 입력·제출·정답 공개를 이동 조건으로 요구하지 않는다. |
 | 정답·다음 선택 | 정답·해설, 복습·다음·심화 후보 | `r` 본문 복습, `n` 현재 파트 완료 표시 후 다음 파트. 마지막 파트는 기본 과정 완료 화면으로 이동한다. |
 | 파트 PDF | 생성 상태·저장 위치 | `p` 현재 파트 PDF 생성/열기, `x` 원하는 경로로 내보내기. OS 뷰어에서 인쇄한다. |
 | 과정 완료·심화 | 완료한 기본 과정, 후보 주제와 공부할 이유 | 후보 선택 시 새 과정 초안을 검토한다. 선택하지 않아도 완료 상태를 유지한다. |
 | 생성 작업 표시 | 단계·경과 시간·최근 작업 설명 | `Esc` 취소. 다른 저장 자료 열람은 가능하며 완료되지 않은 자료는 학습 본문으로 공개하지 않는다. |
 
-TUI는 본문·코드·퀴즈·그림 설명을 표시하고, 실제 SVG/이미지와 인쇄 레이아웃은 외부 뷰어로 연다. 터미널 그래픽 프로토콜 지원을 첫 버전 필수로 두지 않는다. PDF 내보내기는 퀴즈 풀이 여부와 무관하게 허용한다. 정답 공개는 앱에서만 상태로 제어하고, PDF에는 별도 정답 페이지를 넣는다.
+TUI는 본문·코드·퀴즈·그림 설명과 ASCII 도식을 표시하고, 실제 SVG/이미지와 인쇄 레이아웃은 외부 뷰어로 연다. 터미널 그래픽 프로토콜 지원을 첫 버전 필수로 두지 않는다. PDF 내보내기는 퀴즈 풀이 여부와 무관하게 허용한다. 정답 공개는 앱에서만 상태로 제어하고, PDF에는 별도 정답 페이지를 넣는다.
 
 ## 4. 생성 흐름과 상태
 
@@ -90,12 +118,16 @@ flowchart TD
     D --> E{현재 파트 자료 존재?}
     E -->|예| I[저장 자료 열람]
     E -->|아니오| F[Codex 본문·그림 정의·퀴즈 생성]
-    F --> G[최종 JSON·참조 검증]
-    G --> H[시각자료 렌더링·원자적 저장]
-    H --> I
-    F -->|실패·취소| X[기존 자료 보존·수동 재시도]
+    F --> G[최종 JSON·참조 검증·후보 임시 저장]
+    G --> H[원본 시각자료 렌더링]
+    H -->|완성| Z[원자적 저장]
+    Z --> I
+    H -->|그림 생성·렌더링 실패| Y[저장된 Mermaid/SVG·ASCII 후보 시도]
+    Y -->|의미를 보존한 대체 완성| Z
+    F -->|정의 없음·취소| X[기존 자료 보존·수동 재시도]
+    F -->|AI 불가·동일 입력의 검증된 정의 존재| Y
     G -->|검증 실패| X
-    H -->|필수 그림 실패| X
+    Y -->|대체도 모두 실패| X
     I --> P[요청 시 파트 PDF 생성·열기]
     I --> J[퀴즈 풀이·정답 확인]
     J --> K{사용자 선택}
@@ -107,13 +139,48 @@ flowchart TD
     N -->|예| B
 ```
 
+### ASCII 데이터 흐름
+
+```text
+Topic -> AI Plan -> Review / Adjust -> Start -> Save Plan
+           ^              |
+           +-- AI request--+
+                          |
+                          +-- manual edit --> Review / Adjust
+
+Save Plan -> Current Part
+                  |
+                  +-- ready material --> Load ---------+
+                  |                                    |
+                  +-- no material --> Codex (remote)   |
+                                          |            |
+                                   Structured JSON     |
+                                          |            |
+                                   Validate / stage    |
+                                          |            |
+                                   Render / fallback   |
+                                          |            |
+                                         Save ---------+
+                                                       |
+                                                       v
+                                                     Lesson
+
+Lesson --> TUI / Quiz --> Answers / Review / Next (user)
+   |
+   +-- PDF request --> HTML --> Chromium --> Part PDF --> OS Viewer
+```
+
+`Review / Adjust`에서 직접 수정하거나 AI 수정 요청으로 초안을 조정하고, 사용자가 시작해야 과정이 확정된다. `ready material`은 검증·렌더링·저장이 완료된 기존 자료다. 최종 JSON과 참조를 검사한 뒤 원본 또는 의미를 보존하는 대체 시각자료를 완성해 저장한다. TUI와 요청 시 생성하는 파트 PDF는 같은 `Lesson`과 선택된 자산을 사용한다.
+
+본문 생성·검증이 실패하거나 취소되면 기존 자료를 보존한다. 그림만 실패하면 저장된 대체 후보를 먼저 사용하며 대체도 모두 실패할 때 미완성/재시도를 안내한다. 복습은 저장 자료로 돌아가고 다음은 남은 파트로 이동한다. 마지막 파트 이후 기본 과정을 완료하며 선택한 심화 주제만 새 과정 초안으로 이어진다. 채점·통과 조건은 없다.
+
 `N → B`는 원래 과정 연장이 아니라 선택 주제의 **새 과정 초안**이다. 다음 파트 자료는 사용자가 진입할 때 생성하며 과정 전체를 미리 자동 생성하지 않는다.
 
 | 상태 축 | 값 | 의미 |
 | --- | --- | --- |
 | 과정 `status` | `draft`, `active`, `completed` | 사용자 초안 확정·기본 과정 완료 상태. |
 | 작업 `status` | `queued`, `running`, `succeeded`, `failed`, `cancelled`, `interrupted` | 생성·렌더링 시도의 실행 상태. `interrupted`는 앱 강제 종료 후 복구 시 표시한다. |
-| 자료 `state` | `staging`, `ready`, `failed` | JSON 검증·필수 시각자료가 끝난 자료만 `ready`. |
+| 자료 `state` | `staging`, `ready`, `failed` | JSON 검증 후 각 필수 그림의 원본 또는 의미를 보존하는 대체가 완성되면 `ready`. |
 | 파트 학습 `status` | `not_started`, `studying`, `completed` | 본문 열람과 사용자의 다음 선택으로 변한다. 생성 성공이나 퀴즈 정답은 완료 조건이 아니다. |
 | PDF 상태 | `missing`, `ready`, `failed` | 해당 자료·템플릿 버전의 PDF 상태. PDF 실패가 본문 학습 완료를 취소하지 않는다. |
 
@@ -128,11 +195,13 @@ flowchart TD
 | `CoursePlan` | `schema_version`, `topic`, `title`, `objectives[]`, `scope`, `parts[]` |
 | `PartOutline` | `ordinal`, `title`, `objectives[]`, `minutes`(30~45) |
 | `Lesson` | `schema_version`, `title`, `minutes`, `sections[]`, `visuals[]`, `quizzes[]`, `sources[]`, `follow_ups[]` |
+| `VisualDefinition` | `id`, `kind`(mermaid/svg/image_prompt/ascii), `source`, `caption`, `alt_text`, `fallbacks[]` |
+| `FallbackDefinition` | `kind`(mermaid/svg/ascii), `source`. 중첩 fallback과 새 이미지 생성 요청은 없다. |
 | `GenerationRequest` | `job_id`, `kind`(plan/lesson), `prompt`, `schema_path`, `job_dir`, `search_mode`, `timeout_seconds` |
 | `GenerationResult` | `payload`, `job_id`, `usage`(제공된 값만), `cli_version`, `reported_model`(모르면 null) |
 | `JobEvent` | `job_id`, `phase`, `message`, `elapsed_seconds`. 총량을 모르는 작업에 임의의 진행률을 붙이지 않는다. |
 | `MaterialRef` / `PdfRef` | `id`, `relative_path`, `sha256`, `input_hash` / `render_hash` |
-| `AssetRef` | `visual_id`, `kind`, `source_path`, `rendered_path`, `sha256`, `status`. 경로는 `data_root` 기준이며 완성된 자산만 렌더러에서 반환한다. |
+| `AssetRef` | `visual_id`, `requested_kind`, `kind`(선택된 svg/image/ascii), `source_path`, `rendered_path`, `sha256`, `status`, `fallback_used`, `fallback_reason`(nullable). 경로는 `data_root` 기준이며 완성된 자산만 반환한다. |
 | `ProgressSnapshot` | `part_id`, `material_id`(nullable), `status`, `section_index`, `answers`, `answers_revealed`, `updated_at` |
 | `GenerationFailure` | `category`, `safe_message`, `retryable`, `exit_code`(nullable). 비밀정보와 CLI 생로그는 포함하지 않는다. |
 
@@ -146,6 +215,7 @@ async def load_or_generate(part_id: str, regenerate: bool = False) -> MaterialRe
 async def generate(request: GenerationRequest,
                    on_event: Callable[[JobEvent], None]) -> GenerationResult: ...
 async def render_visuals(lesson: Lesson, material_dir: Path) -> list[AssetRef]: ...
+async def retry_visual(material_id: str, visual_id: str) -> AssetRef: ...
 async def export_part(part_id: str, destination: Path | None = None) -> PdfRef: ...
 def save_progress(snapshot: ProgressSnapshot) -> None: ...
 def reveal_answers(part_id: str) -> None: ...
@@ -188,13 +258,22 @@ async def cancel_job(job_id: str) -> None: ...
     },
     "visual": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "kind", "source", "caption", "alt_text"],
+      "required": ["id", "kind", "source", "caption", "alt_text", "fallbacks"],
       "properties": {
         "id": {"type": "string", "pattern": "^v[1-9][0-9]*$"},
-        "kind": {"enum": ["mermaid", "svg", "image_prompt"]},
+        "kind": {"enum": ["mermaid", "svg", "image_prompt", "ascii"]},
         "source": {"type": "string", "minLength": 1},
         "caption": {"type": "string", "minLength": 1},
-        "alt_text": {"type": "string", "minLength": 1}
+        "alt_text": {"type": "string", "minLength": 1},
+        "fallbacks": {"type": "array", "maxItems": 2, "items": {"$ref": "#/$defs/fallback"}}
+      }
+    },
+    "fallback": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "source"],
+      "properties": {
+        "kind": {"enum": ["mermaid", "svg", "ascii"]},
+        "source": {"type": "string", "minLength": 1}
       }
     },
     "quiz": {
@@ -228,6 +307,8 @@ async def cancel_job(job_id: str) -> None: ...
   }
 }
 ```
+
+각 그림은 원본과 대체 후보를 같은 응답에 담아 `lesson.json`에 저장한다. JSON 검증 후 동일 입력 해시와 함께 `staging` 자료의 정의를 먼저 원자적으로 저장한다. 그림 처리가 끝나기 전에는 현재 자료 참조를 바꾸지 않으며, 중단 후에는 이 검증된 정의로 로컬 렌더링을 재개할 수 있다. 원본이 ASCII이면 `fallbacks`는 빈 배열이다. 그 외에는 의미를 보존하는 ASCII 후보를 마지막에 하나 필수로 두고, 앞에 Mermaid 또는 SVG 후보를 최대 하나 둔다. 이 관계는 JSON 파싱 후 추가 검증한다. 실패할 때 새 대체 생성 AI를 호출하지 않는다. 원본과 후보는 같은 구조·연결·순서·라벨을 설명하며 caption/alt_text는 표현 방식에 치우치지 않는 공통 개념 설명으로 작성한다.
 
 과정 초안은 별도의 다음 스키마로 요청한다.
 
@@ -268,11 +349,13 @@ DB는 메타데이터와 진행을 저장하고 큰 자료는 파일로 둔다. 
 | 테이블 | 주요 필드·관계 |
 | --- | --- |
 | `courses` | `id PK`, `topic`, `title`, `objectives_json`, `scope`, `plan_json`, `plan_revision`, `status`, `current_part_id FK parts NULL`, `parent_course_id FK courses NULL`, `created_at`, `updated_at` |
-| `parts` | `id PK`, `course_id FK courses`, `ordinal`, `outline_json`, `input_hash`, `active_material_id FK materials NULL`。`UNIQUE(course_id, ordinal)`。 |
-| `materials` | `id PK`, `part_id FK parts`, `revision`, `state`, `input_hash`, `lesson_path`, `content_hash`, `schema_version`, `prompt_version`, `cli_version`, `reported_model NULL`, `search_mode`, `created_at`。`UNIQUE(part_id, revision)`。 |
-| `assets` | `id PK`, `material_id FK materials`, `visual_id`, `kind`, `source_path`, `rendered_path`, `sha256`, `status`。`UNIQUE(material_id, visual_id)`。 |
+| `parts` | `id PK`, `course_id FK courses`, `ordinal`, `outline_json`, `input_hash`, `active_material_id FK materials NULL`. `UNIQUE(course_id, ordinal)`. |
+| `materials` | `id PK`, `part_id FK parts`, `revision`, `state`, `input_hash`, `lesson_path`, `content_hash`, `schema_version`, `prompt_version`, `cli_version`, `reported_model NULL`, `search_mode`, `created_at`. `UNIQUE(part_id, revision)`. |
+| `assets` | `id PK`, `material_id FK materials`, `visual_id`, `requested_kind`, `kind`(선택된 svg/image/ascii), `source_path`, `rendered_path`, `sha256`, `status`, `fallback_used`, `fallback_reason NULL`. `UNIQUE(material_id, visual_id)`. |
 | `progress` | `part_id PK/FK parts`, `material_id FK materials NULL`, `status`, `section_index`, `answers_json`, `answers_revealed`, `updated_at`. 답 메모는 해당 자료의 문제 ID에 연결한다. 채점·점수·통과 필드는 없다. |
 | `jobs` | `id PK`, `course_id FK courses`, `part_id FK parts NULL`, `kind`(plan/lesson/visual/pdf), `status`, `phase`, `started_at`, `finished_at NULL`, `error_category NULL`, `job_dir`, `output_material_id FK materials NULL` |
+
+원본과 후보 정의는 `lesson.json`에, `assets.source_path`에는 실제 선택한 정의 파일을 기록한다. 대체를 사용해도 원본 정의를 남겨 선택적으로 재시도할 수 있다. 원본 재시도는 성공 전까지 작동하는 대체 자산을 유지한다. 성공 시 자산만 원자적으로 교체하고 PDF 해시를 무효화하며 학습 진행·퀴즈 답 메모는 바꾸지 않는다.
 
 PDF 메타데이터는 각 자료 디렉터리의 `render-manifest.json`에 `render_hash`, `pdf_path`, `sha256`, `status`, `template_version`으로 둔다. `render_hash`는 본문 JSON·그림 파일·템플릿·폰트·렌더러 설정의 해시로 계산한다. 별도 배포 서버, 사용자 테이블, 채점 이력, 범용 작업 큐는 추가하지 않는다.
 
@@ -283,11 +366,12 @@ PDF 메타데이터는 각 자료 디렉터리의 `render-manifest.json`에 `ren
   courses/<course_id>/
     plan-r<revision>.json        # 저장된 초안·확정 과정
     parts/<part_id>/materials/<material_id>/
-      lesson.json               # 검증된 본문·문제·분리된 정답 필드
+      lesson.json               # 본문·문제·정답·원본/대체 그림 정의
       progress-snapshot.json    # 자료 교체 전 이전 답 메모 보존용
       visuals/v1.mmd            # 그림 정의. SVG는 v1.source.svg
       visuals/v1.svg            # 검사·정리된 표시용 그림
-      images/v2.png             # 생성 이미지 연동 검증 후 사용
+      visuals/v2.txt            # 선택된 ASCII 도식, 줄/공백 보존
+      images/v3.png             # 생성 이미지 연동 검증 후 사용
       lesson.html
       lesson.pdf
       render-manifest.json
@@ -370,7 +454,8 @@ argv = [
 | `login_required` / `wrong_auth_method` | 사용자가 CLI에서 ChatGPT 로그인 상태를 확인한 뒤 재시도한다. 앱이 인증을 변경하지 않는다. |
 | `quota_exceeded` | 생성을 멈추고 CLI가 반환한 재개 시각이 있으면 표시한다. 저장된 학습은 계속 가능하다. 과금 API로 전환하지 않는다. |
 | `network` / `timeout` / `cancelled` | 중간 자료를 공개하지 않고 수동 재시도한다. 취소는 사용자 동작으로 표시한다. |
-| `invalid_json` / `invalid_content` / `render_failed` | 안전한 요약을 표시하고 이전 자료를 보존한다. 수정 AI 호출은 사용자가 재시도할 때만 한다. |
+| `invalid_json` / `invalid_content` | 안전한 요약을 표시하고 이전 자료를 보존한다. 수정 AI 호출은 사용자가 재시도할 때만 한다. |
+| `render_failed` | 그림은 저장된 후보로 로컬 대체를 시도한다. 모두 실패하면 이전 자료와 미완성 상태를 유지한다. PDF 자체 실패는 PDF 상태만 갱신한다. |
 | `unknown` | 문자열만으로 과금·인증·재시도 가능 여부를 단정하지 않는다. 종료 코드와 안전한 요약을 남긴다. |
 
 알려진 구조화 오류가 있으면 우선하고 CLI 버전에 맞는 분류를 확인한다. 원시 stderr·프롬프트·추론·토큰을 일반 로그에 저장하지 않는다. `diagnostics.json`은 종류·시각·단계·경과 시간·안전한 실패 분류만 담는다. 무제한 자동 재시도를 하지 않는다.
@@ -379,15 +464,23 @@ argv = [
 
 Codex의 cwd는 `<data_root>/jobs/<job_id>`다. 앱 코드의 Git 저장소를 넘기지 않는다. 자료 생성은 read-only 출력 중심이며 추가 쓰기 디렉터리나 권한 우회를 지정하지 않는다. cwd와 read-only는 비밀정보를 포함한 전체 파일의 읽기 격리를 보장하지 않으므로 입력/작업 영역에 학습과 관계없는 파일을 넣지 않는다.
 
-그림은 `mermaid`/`svg` 정의를 구조화 응답으로 받아 앱에서 렌더링한다. 생성 이미지가 적합한 개념은 `image_prompt`를 보존한다. CLI 이미지 기능 활성화와 `exec` 호출·최종 이미지 파일/이벤트 수집·취소·사용량 처리는 서로 다른 확인이며, 후자는 미검증이다. [Codex 이미지 생성](https://learn.chatgpt.com/docs/image-generation).
+그림은 `mermaid`/`svg`/`ascii` 정의와 대체 후보를 구조화 응답으로 받아 앱에서 렌더링한다. 생성 이미지가 적합한 개념은 `image_prompt`를 보존한다. CLI 이미지 기능 활성화와 `exec` 호출·최종 이미지 파일/이벤트 수집·취소·사용량 처리는 서로 다른 확인이며, 후자는 미검증이다. [Codex 이미지 생성](https://learn.chatgpt.com/docs/image-generation).
 
 구현 초기에 구독 경로로 작게 검증해 산출물 위치·형식·필요 권한을 확인한다. 파일 생성 권한이 필요할 때만 이미지 작업 전용 영역을 cwd로 하는 workspace-write를 검토한다. 경로 정규화·루트 안인지 확인·링크 거부·실제 이미지 형식/크기/용량 확인 후 앱이 자료 디렉터리로 복사한다. `danger-full-access`를 기본값으로 쓰지 않는다.
 
-이미지 생성을 사용할 수 없으면 유료 이미지 API로 바꾸지 않는다. 필요한 개념 설명은 의미를 보존하는 Mermaid/SVG로 대체하고 대체 여부를 명시한다. 대체로도 설명 요구를 충족하지 못하면 미완성으로 알려준다. 생성 삽화를 혼합하는 제품 목표는 유지하고 자동화를 검증했다고 표현하지 않는다.
+이미지 생성 기능이나 원본 렌더링이 실패하면 저장된 `fallbacks` 순서대로 Mermaid/SVG를 시도하고, 렌더링이 불가능하면 ASCII를 사용한다. 원본과 의미를 보존하는 대체 중 하나가 각 필수 그림에 대해 완성되면 자료를 `ready`로 할 수 있다. 모든 후보가 실패하면 이전 자료를 유지하고 미완성/재시도를 안내한다. 사용자 취소는 fallback 실행도 중단한다.
+
+대체는 추가 AI 호출 없이 같은 응답에 저장한 정의로 수행한다. 로그인·구독 한도·네트워크 문제로 AI 호출 전체가 불가능하면 새 AI 대체 생성을 반복하지 않는다. 동일 입력의 이미 검증된 `Lesson`/후보가 있으면 로컬 렌더링을 재개할 수 있다. 검증된 정의가 없으면 기존 ready 자료를 열거나 수동 재시도를 안내하며 부분 JSONL은 사용하지 않는다. 유료 API로 전환하지 않는다.
+
+TUI와 PDF의 그림 설명에 `ASCII 대체 사용` 같은 표시와 이유를 넣고, TUI에서 선택적으로 원본 재시도를 제공한다. 원본 실패만으로 파트 학습을 막지 않는다. 생성 삽화를 혼합하는 목표와 네이티브 이미지 비대화형 자동화의 미검증 경계는 유지한다.
 
 ## 8. TUI·그림·PDF의 공통 렌더링
 
-`Lesson`과 검증된 `assets`가 공통 학습 데이터다. TUI는 section의 Markdown/코드/그림 caption을 표시하고 PDF는 같은 데이터를 고정 HTML 템플릿에 넣는다. TUI와 PDF용 본문을 AI가 따로 만들지 않는다. 정답 필드는 일반 본문 렌더링 함수에 넘기지 않는다.
+`Lesson`과 검증된 `assets`가 공통 학습 데이터다. TUI는 section의 Markdown/코드/그림 caption을 표시하고 ASCII 자산은 고정폭 텍스트로 직접 보여준다. PDF는 같은 데이터와 선택된 자산을 고정 HTML 템플릿에 넣는다. TUI와 PDF용 본문을 AI가 따로 만들지 않는다. 정답 필드는 일반 본문 렌더링 함수에 넘기지 않는다.
+
+ASCII `source`는 인쇄 가능한 ASCII 문자와 LF로 구성해 UTF-8/LF 바이트로 저장하고 탭·제어문자·escape sequence는 거부한다. 짧은 영문/ID 라벨의 의미를 한글 본문·caption에서 설명한다. 초기 최대 폭은 72칸이며, 구조·연결·순서·라벨이 본문 설명과 맞는 후보만 사용한다. 한 줄을 자동 줄바꿈하거나 자르지 않는다. 폭을 넘으면 의미를 유지한 분할 후보를 사용하고, 폭/페이지 기준을 충족하지 못한 후보는 완성으로 처리하지 않는다.
+
+TUI는 `.txt` 자산을 markup 없이 고정폭으로 표시하고 PDF는 escape한 내용을 `<pre class="diagram">`에 넣어 줄·공백을 보존한다. PDF 페이지 폭과 TUI 표시 폭을 확인하고, TUI가 좁으면 가로 스크롤/외부 보기로 원본 줄을 유지한다. 큰 도식은 완전한 연결을 유지하는 단위로 분할하며 페이지 경계에서 중간 연결을 잘라내지 않는다.
 
 Mermaid는 로컬에 고정한 라이브러리로 SVG를 렌더링하며 CDN에 의존하지 않는다. `mermaid.render`의 SVG 결과를 저장하는 방식을 기본으로 한다. [Mermaid Usage](https://mermaid.js.org/config/usage.html).
 
@@ -403,6 +496,13 @@ body { font-size: 11pt; line-height: 1.65; }
 h2, h3 { break-after: avoid; }
 figure, .quiz { break-inside: avoid; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 9pt; }
+pre.diagram {
+  font-family: "Lesson Mono", monospace;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  break-inside: avoid;
+}
 img, svg { max-width: 100%; height: auto; }
 .answer-section { break-before: page; }
 ```
@@ -410,6 +510,8 @@ img, svg { max-width: 100%; height: auto; }
 본문·예시·그림·문제 → 페이지 나눔 → 정답·해설 → 출처·심화 후보 순서로 출력한다. 문제 근처의 각주·caption에 정답을 넣지 않는다. 큰 그림·코드·문제 블록에 `break-inside: avoid`를 무조건 적용하지 않고 읽기 좋게 분할해 공백과 잘림을 방지한다. 흑백에서도 형태·선 종류·라벨로 구분하고 색에만 의미를 맡기지 않는다. 래스터 이미지는 인쇄 폭 기준 원칙적으로 300dpi 수준, 그림 글자는 본문에 가까운 읽기 쉬운 크기로 한다.
 
 Playwright async API의 `await page.pdf(path=str(pdf_temp_path), format="A4", print_background=True, prefer_css_page_size=True)`를 기본으로 한다. 임시 PDF를 확인한 뒤 최종 경로로 바꾼다. 첫 버전은 현재 파트만 출력한다. 생성된 PDF는 `render_hash`가 일치하면 재사용한다. 템플릿·그림 변경은 PDF만 다시 렌더링하며 AI 본문을 재생성하는 이유로 삼지 않는다.
+
+추가 fallback 확인 기준은 이미지 생성 실패·Mermaid 렌더링 실패를 각각 가정했을 때 저장된 후보만으로 전환되고, ASCII의 줄/공백과 본문 의미가 TUI/PDF에서 일치하며 인쇄 폭을 넘지 않는 것이다. 대체 표시·원본 재시도·후보 전부 실패 시 이전 자료 보존을 확인한다. 코드는 줄바꿈 후에도 읽을 수 있어야 하고 도식은 임의로 줄바꿈되지 않아야 한다. 이 기준은 구현 후 검증하며 이번에는 실제 렌더러를 실행하지 않는다.
 
 확인 기준은 대표 한글 파트에서 글자 누락 없음, 본문/코드/그림 잘림 없음, 페이지 경계에서 제목과 본문이 분리되지 않음, 그림과 설명 대응, 흑백 구분, 문제 뒤 별도 페이지의 정답, TUI/PDF 학습 내용 일치, 오프라인에서 기존 PDF/그림 열람 가능이다. 구조 검사와 함께 PDF의 실제 페이지를 시각적으로 확인한다.
 
@@ -420,8 +522,8 @@ Playwright async API의 `await page.pdf(path=str(pdf_temp_path), format="A4", pr
 | 1 | CLI 호환·구독 인증의 작은 검증 | 0.160.1에서 위 argv·stdin·read-only·schema·JSONL·`-o`·검색 override 확인. 실제 이벤트를 안전한 fixture로 저장. API key 환경에서도 과금 인증으로 이동하지 않는지 확인하되, 인증 불일치 시험은 사용자의 실제 인증을 사용하지 않는다. |
 | 2 | 저장 모델과 고정 fixture의 Textual 화면 | 주제 입력, 초안 수정, 본문, 정답 공개, 다음/복습, 종료/재개 동작. 생성 대기 중에도 입력/취소에 응답. |
 | 3 | 과정 초안 → 파트 하나 실제 생성 | 30~45분, 필요한 장·출처·참조 JSON, 필수 그림, 간단한 문제/정답 저장. 채점·통과 조건 없음. 재생성 없이 재개. |
-| 4 | Mermaid/SVG와 파트 PDF | 같은 Lesson에서 A4 PDF 생성. Mermaid HTML 라벨 비활성화와 한글 SVG 텍스트 확인. 한글/코드 줄바꿈/그림/흑백/정답 분리를 실제 페이지로 확인. PDF 재사용·재렌더링 검증. |
-| 5 | 취소·실패·강제 종료·자료 재생성 | 자식 프로세스가 남지 않고 부분 자료로 현재 자료를 덮어쓰지 않음. 이전 자료·진행 보존. 구독 한도/로그인 문제의 수동 재시도. |
+| 4 | Mermaid/SVG·ASCII 대체와 파트 PDF | 같은 Lesson과 선택 자산에서 A4 PDF 생성. Mermaid HTML 라벨 비활성화·한글 SVG 텍스트 확인. 실패 시 저장된 ASCII 전환, 줄/공백/인쇄 폭, 대체 표시와 원본 재시도 확인. 한글/코드/흑백/정답 분리·PDF 캐시를 실제 페이지로 검증. |
+| 5 | 취소·실패·강제 종료·자료 재생성 | 자식 프로세스가 남지 않고 부분 자료로 현재 자료를 덮어쓰지 않음. 후보 전부 실패 시 이전 자료·진행 보존. 구독/로그인/네트워크 문제에서 새 AI 대체를 반복하지 않고 저장된 정의만 사용하거나 수동 재시도. |
 | 6 | 기본 과정 완료·선택 심화, 이미지 경로 확인 | 원래 과정은 완료 유지, 선택 시에만 새 초안. 네이티브 이미지의 비대화형 생성/수집/취소 검증. 미지원 시 대체와 미검증 상태 명시. |
 
 먼저 확인할 기술 항목은 CLI 전체 호출의 실제 동작, JSON Schema 지원 범위, 오류/구독 한도 이벤트 형태, 이미지 생성·파일 수집 권한, 폰트/Chromium 배포, OS 뷰어 실행 방식, 라이브러리 고정 버전이다. 설치 CLI의 `--help`에서 확인하지 않은 플래그는 설계의 전제로 쓰지 않는다.
