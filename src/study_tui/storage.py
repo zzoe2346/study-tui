@@ -175,6 +175,13 @@ class Repository:
     def get_part(self, part_id: str) -> dict:
         return self._required("parts", part_id)
 
+    def select_part(self, part_id: str) -> None:
+        """Remember explicit review navigation without changing completion."""
+        part = self.get_part(part_id)
+        with self.db:
+            self.db.execute("UPDATE courses SET current_part_id=?,updated_at=? WHERE id=?",
+                            (part_id, now(), part["course_id"]))
+
     def save_draft(self, plan: dict, course_id: str | None = None,
                    parent_course_id: str | None = None) -> str:
         plan = validate_plan(plan)
