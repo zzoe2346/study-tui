@@ -1,0 +1,19 @@
+# 비밀정보 (예제 설정은 추적 가능)
+.env
+.env.*
+!.env.example
+!.env.template
+/secrets/
+*.pem
+*.key
+
+# 로컬 학습 데이터, 캐시, 생성 산출물
+/data/
+/local/
+/cache/
+/generated/
+/exports/
+/work/
+
+# 운영체제 메타데이터
+.DS_Store
