@@ -72,7 +72,9 @@ async def click(app, pilot, selector):
 
 async def start_demo(app, pilot):
     app.query_one("#topic", Input).value = "PostgreSQL B-tree 인덱스"
-    await click(app, pilot, "#propose")
+    app.query_one("#topic", Input).focus()
+    await pilot.press("enter")
+    await settle(app, pilot)
     assert app.view == "plan"
     await click(app, pilot, "#start")
     assert app.view == "study"

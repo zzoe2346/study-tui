@@ -79,6 +79,7 @@ class StudyApp(App):
         self._last_scroll = None
         self._restoring_scroll = False
         self._followups: list[dict] = []
+        self._view_lock = asyncio.Lock()
         if hasattr(generator, "on_event"):
             generator.on_event = self.set_status
 
@@ -97,12 +98,16 @@ class StudyApp(App):
             self.query_one("#status", Static).update(message)
 
     async def replace_content(self, *widgets) -> None:
-        self._rendering = True
-        content = self.query_one("#content", VerticalScroll)
-        await content.remove_children()
-        await content.mount(*widgets)
-        content.scroll_home(animate=False)
-        self._rendering = False
+        async with self._view_lock:
+            self._rendering = True
+            try:
+                with self.batch_update():
+                    content = self.query_one("#content", VerticalScroll)
+                    await content.remove_children()
+                    await content.mount(*widgets)
+                    content.scroll_home(animate=False)
+            finally:
+                self._rendering = False
 
     def start_job(self, coro, label: str) -> None:
         if self.busy:
@@ -332,7 +337,7 @@ class StudyApp(App):
 
     @on(Select.Changed,"#section-picker")
     async def section_selected(self, event: Select.Changed) -> None:
-        if self._rendering or event.value == Select.BLANK or int(event.value) == self.section_index:
+        if self._rendering or not event.select.is_mounted or event.value == Select.BLANK or int(event.value) == self.section_index:
             return
         await self.goto_section(int(event.value))
 
@@ -343,7 +348,7 @@ class StudyApp(App):
 
     @on(Select.Changed,"#part-picker")
     def part_selected(self, event: Select.Changed) -> None:
-        if self._rendering or event.value == Select.BLANK or event.value == self.part_id:
+        if self._rendering or not event.select.is_mounted or event.value == Select.BLANK or event.value == self.part_id:
             return
         if self.busy:
             self.query_one("#part-picker",Select).value = self.part_id
@@ -440,6 +445,14 @@ class StudyApp(App):
         elif button_id.startswith("followup-"): self.start_job(self.follow_up(int(button_id.removeprefix("followup-"))),"새 후속 과정 준비 중")
         elif button_id == "review": await self.show_study()
         elif button_id == "home": await self.show_home()
+
+    @on(Input.Submitted,"#topic")
+    def topic_submitted(self) -> None:
+        self.start_job(self.propose(),"계획 생성 중")
+
+    @on(Input.Submitted,"#adjustment")
+    def adjustment_submitted(self) -> None:
+        self.start_job(self.adjust(),"계획 조정 중")
 
     def action_cancel(self) -> None:
         if self._worker and self.busy:

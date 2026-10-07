@@ -6,6 +6,7 @@ import contextlib
 import copy
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -41,7 +42,27 @@ def transport_schema(schema: dict) -> dict:
             for child in value:
                 visit(child)
     visit(result)
+    # This Korean course generator accepts English terms/code, but not accidental
+    # Japanese prose. Strict decoding enforces the same quality check as below.
+    if "sections" in result.get("properties", {}):
+        result["properties"]["title"]["pattern"] = r"^[^\u3040-\u30ff]*$"
+        for definition, fields in {"section": ["title", "body_markdown"],
+                "visual": ["caption", "alt_text"], "quiz": ["question", "answer", "explanation"],
+                "follow_up": ["topic", "reason"]}.items():
+            properties = result["$defs"][definition]["properties"]
+            for field in fields:
+                properties[field]["pattern"] = r"^[^\u3040-\u30ff]*$"
     return result
+
+
+def validate_generated_language(lesson: dict) -> None:
+    values = [lesson["title"]]
+    for collection, fields in {"sections": ["title", "body_markdown"],
+            "visuals": ["caption", "alt_text"], "quizzes": ["question", "answer", "explanation"],
+            "follow_ups": ["topic", "reason"]}.items():
+        values.extend(item[field] for item in lesson[collection] for field in fields)
+    if any(re.search(r"[\u3040-\u30ff]", value) for value in values):
+        raise GenerationFailure("language", "한국어 교재에 다른 언어의 설명이 섞여 있어 채택하지 않았습니다. 기존 자료를 유지했습니다. 직접 재시도하세요.")
 
 
 def classify_failure(text: str) -> GenerationFailure:
@@ -58,7 +79,7 @@ def classify_failure(text: str) -> GenerationFailure:
 
 
 class CodexGenerator:
-    prompt_version = "1"
+    prompt_version = "2"
 
     def __init__(self, data_root: Path, *, executable: str = "codex", search_mode: str = "cached",
                  plan_timeout: int = 180, lesson_timeout: int = 600, image_timeout: int = 240,
@@ -205,6 +226,7 @@ class CodexGenerator:
                         payload = validate_plan(payload)
                     elif kind == "lesson":
                         payload = validate_lesson(payload)
+                        validate_generated_language(payload)
                 except ContentError as exc:
                     raise GenerationFailure("schema", f"교재 형식이 올바르지 않습니다 ({exc}). 직접 재시도하세요.") from exc
                 return payload, job
@@ -240,6 +262,7 @@ class CodexGenerator:
 
     async def generate_lesson(self, plan: dict, ordinal: int, prior_summary: str = "") -> dict:
         prompt = """한국어 백엔드 학습 교재를 지정된 파트 하나에 대해 작성하세요. JSON 스키마만 출력하세요.
+모든 설명·표·활동·요약·문제·정답·해설을 한국어로 작성하세요. 영어 기술명과 코드는 그대로 사용하되 일본어 등 다른 언어의 설명을 섞거나 번역을 학습 활동으로 요구하지 마세요.
 30~45분 동안 독립적으로 공부할 충분한 설명과 실행 가능한 예제, 읽기/손으로 생각할 활동을 포함하세요.
 sections는 concept, mechanism, example, summary를 모두 포함하고, 모든 시각자료와 source ID는 실제 해당 section에 참조하세요. ID는 v1/q1/s1 형태입니다.
 필수 그림은 최소 1개: 구조/흐름은 mermaid 또는 안전한 svg, 비유적 그림이 도움이 될 때만 image_prompt. ASCII 기본 자료도 가능합니다.

@@ -225,6 +225,28 @@ async def test_cli_transport_schema_retains_local_url_and_reference_validation(f
 
 
 @pytest.mark.asyncio
+async def test_mixed_japanese_prose_rejected_without_extra_generation(fake_cli, tmp_path):
+    original_schema = copy.deepcopy(LESSON_SCHEMA)
+    lesson = copy.deepcopy(DEMO_LESSONS[1])
+    lesson["sections"][0]["body_markdown"] += "\n\nこれはインデックスの説明です。"
+    (fake_cli.parent / "payload.json").write_text(json.dumps(lesson, ensure_ascii=False))
+    generator = CodexGenerator(tmp_path / "data", executable=str(fake_cli))
+    with pytest.raises(GenerationFailure) as caught:
+        await generator.generate_lesson(DEMO_PLAN, 1)
+    assert caught.value.category == "language"
+    assert sum(call["args"][0] == "exec" for call in invocations(fake_cli)) == 1
+    job = next((tmp_path / "data" / "jobs").iterdir())
+    diagnostics = json.loads((job / "diagnostics.json").read_text())
+    assert diagnostics["status"] == "language"
+    assert "これは" not in (job / "diagnostics.json").read_text()
+    transport = json.loads((job / "schema.json").read_text())
+    assert transport["$defs"]["section"]["properties"]["body_markdown"]["pattern"] == r"^[^\u3040-\u30ff]*$"
+    assert "pattern" not in transport["$defs"]["source"]["properties"]["title"]
+    assert LESSON_SCHEMA == original_schema
+    assert "pattern" not in LESSON_SCHEMA["$defs"]["section"]["properties"]["body_markdown"]
+
+
+@pytest.mark.asyncio
 async def test_cancel_cleans_up_child_process_group(fake_cli, tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_MODE", "block")
     generator = CodexGenerator(tmp_path / "data", executable=str(fake_cli))
